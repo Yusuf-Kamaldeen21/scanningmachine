@@ -145,6 +145,11 @@ export const App: React.FC = () => {
     setEditingProduct(null);
   };
 
+  // Delete product by ID (for undo)
+  const handleDeleteProductById = async (id: string) => {
+    await db.products.delete(id);
+  };
+
   // Delete product
   const handleDeleteProduct = async (product: ProductRecord) => {
     await db.products.delete(product.id);
@@ -264,6 +269,8 @@ export const App: React.FC = () => {
             onSaveProduct={handleSaveProduct}
             onEditProduct={(p) => setEditingProduct(p)}
             onViewExistingProduct={handleViewExistingProduct}
+            onUpdateSettings={handleUpdateSettings}
+            onUndoLastSave={handleDeleteProductById}
           />
         )}
 
@@ -271,6 +278,7 @@ export const App: React.FC = () => {
           <ProductList
             products={products}
             categories={categories}
+            targetCount={settings.targetCount}
             onEdit={(p) => setEditingProduct(p)}
             onDelete={(p) => setDeletingProduct(p)}
             onBatchDelete={handleBatchDelete}

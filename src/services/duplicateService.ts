@@ -1,11 +1,13 @@
 import { db } from '../db';
-import type { DuplicateCheckResult } from '../types';
+import type { DuplicateCheckResult, ProductRecord } from '../types';
 
 /**
  * Checks if a product is a duplicate of an existing record.
- * 1. Checks exact barcode match (if barcode is non-empty).
- * 2. If barcode is empty or no barcode match, checks fuzzy match on Brand + ProductName + Size + Variant.
- * Excludes the current product's id if editing an existing product.
+ * 1. Exact barcode match (if barcode is non-empty).
+ * 2. If barcode is empty or unbarcoded, checks for exact match on Brand + ProductName + Size + Variant.
+ *
+ * NOTE: Products with the same Brand and Product Name but DIFFERENT sizes, flavours, or pack configurations
+ * are distinct SKUs / related variants, NOT duplicates.
  */
 export async function checkForDuplicateProduct(
   candidate: {
@@ -19,7 +21,7 @@ export async function checkForDuplicateProduct(
 ): Promise<DuplicateCheckResult> {
   const cleanBarcode = candidate.barcode?.trim() || '';
 
-  // 1. Barcode check
+  // 1. Exact Barcode check
   if (cleanBarcode) {
     const existingWithBarcode = await db.products
       .where('barcode')
@@ -31,21 +33,20 @@ export async function checkForDuplicateProduct(
         isDuplicate: true,
         existingProduct: existingWithBarcode,
         matchType: 'barcode',
-        matchReason: `Barcode ${cleanBarcode} is already registered to "${existingWithBarcode.brand} - ${existingWithBarcode.productName}"`,
+        matchReason: `Barcode ${cleanBarcode} is already registered to "${existingWithBarcode.brand} - ${existingWithBarcode.productName}" (${existingWithBarcode.sizeQuantity})`,
       };
     }
   }
 
-  // 2. Fuzzy match for non-barcode or unbarcoded items
+  // 2. Matching for non-barcoded or unbarcoded items
   const cleanBrand = candidate.brand.trim().toLowerCase();
   const cleanName = candidate.productName.trim().toLowerCase();
   const cleanSize = candidate.sizeQuantity.trim().toLowerCase();
   const cleanVariant = (candidate.variant || '').trim().toLowerCase();
 
   if (cleanBrand && cleanName) {
-    // Check all products with similar brand and name
     const allProducts = await db.products.toArray();
-    const fuzzyMatch = allProducts.find((p) => {
+    const exactMatch = allProducts.find((p) => {
       if (p.id === candidate.id) return false;
 
       const pBrand = p.brand.trim().toLowerCase();
@@ -53,21 +54,31 @@ export async function checkForDuplicateProduct(
       const pSize = p.sizeQuantity.trim().toLowerCase();
       const pVariant = (p.variant || '').trim().toLowerCase();
 
-      // If brand, name, and size match closely
-      const brandMatch = pBrand === cleanBrand;
-      const nameMatch = pName === cleanName || pName.includes(cleanName) || cleanName.includes(pName);
-      const sizeMatch = !cleanSize || !pSize || pSize === cleanSize;
-      const variantMatch = !cleanVariant || !pVariant || pVariant === cleanVariant;
+      // Brand and name must match
+      if (pBrand !== cleanBrand || pName !== cleanName) {
+        return false;
+      }
 
-      return brandMatch && nameMatch && sizeMatch && variantMatch;
+      // If sizes are provided and different -> different SKU, NOT a duplicate
+      if (cleanSize && pSize && cleanSize !== pSize) {
+        return false;
+      }
+
+      // If variants are provided and different -> different flavour/SKU, NOT a duplicate
+      if (cleanVariant && pVariant && cleanVariant !== pVariant) {
+        return false;
+      }
+
+      // If both size and variant match (or both are missing)
+      return true;
     });
 
-    if (fuzzyMatch) {
+    if (exactMatch) {
       return {
         isDuplicate: true,
-        existingProduct: fuzzyMatch,
+        existingProduct: exactMatch,
         matchType: 'fuzzy',
-        matchReason: `Similar item found: "${fuzzyMatch.brand} - ${fuzzyMatch.productName} (${fuzzyMatch.sizeQuantity})" captured on ${fuzzyMatch.dateCaptured}`,
+        matchReason: `Identical product SKU already exists: "${exactMatch.brand} - ${exactMatch.productName} (${exactMatch.sizeQuantity}${exactMatch.variant ? ', ' + exactMatch.variant : ''})"`,
       };
     }
   }
@@ -76,4 +87,31 @@ export async function checkForDuplicateProduct(
     isDuplicate: false,
     matchType: 'none',
   };
+}
+
+/**
+ * Identify all duplicate groups in an array of products (useful for bulk auditing).
+ */
+export function identifyDuplicateBarcodes(products: ProductRecord[]): Map<string, ProductRecord[]> {
+  const barcodeGroups = new Map<string, ProductRecord[]>();
+
+  for (const p of products) {
+    const code = p.barcode?.trim();
+    if (!code) continue;
+
+    if (!barcodeGroups.has(code)) {
+      barcodeGroups.set(code, []);
+    }
+    barcodeGroups.get(code)!.push(p);
+  }
+
+  // Filter to only groups with >1 record
+  const duplicatesOnly = new Map<string, ProductRecord[]>();
+  for (const [code, group] of barcodeGroups.entries()) {
+    if (group.length > 1) {
+      duplicatesOnly.set(code, group);
+    }
+  }
+
+  return duplicatesOnly;
 }

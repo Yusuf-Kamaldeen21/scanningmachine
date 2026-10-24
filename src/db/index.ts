@@ -21,6 +21,7 @@ export const PREDEFINED_CATEGORIES: string[] = [
 export const DEFAULT_SETTINGS: AppSettings = {
   id: 'global-settings',
   targetCount: 1000,
+  scanMode: 'review',
   rememberLastCategory: false,
   lastCategory: 'Food & Groceries',
   rememberBrand: false,
@@ -40,6 +41,11 @@ export class QuickStockDatabase extends Dexie {
     super('QuickStockDB');
     this.version(1).stores({
       products: '&id, barcode, category, dateCaptured, createdAt, brand, productName',
+      categories: '&id, name',
+      settings: '&id',
+    });
+    this.version(2).stores({
+      products: '&id, barcode, category, dateCaptured, createdAt, brand, productName, colour',
       categories: '&id, name',
       settings: '&id',
     });
@@ -65,6 +71,8 @@ export async function initializeDatabase(): Promise<void> {
     const settings = await db.settings.get(DEFAULT_SETTINGS.id);
     if (!settings) {
       await db.settings.add(DEFAULT_SETTINGS);
+    } else if (!settings.scanMode) {
+      await db.settings.update(DEFAULT_SETTINGS.id, { scanMode: 'review' });
     }
   } catch (error) {
     console.error('Failed to initialize database:', error);

@@ -8,9 +8,10 @@ import {
   Download,
   AlertCircle,
   Database,
+  Copy,
 } from 'lucide-react';
 import type { ProductRecord, ProductCategory, ExportOptions } from '../../types';
-import { exportToCSV, exportToExcel, exportToJSON, filterProductsForExport } from '../../services/exportService';
+import { exportToCSV, exportToExcel, exportToJSON, filterProductsForExport, generateTSV, copyTextToClipboard } from '../../services/exportService';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   products,
   categories,
 }) => {
-  const [format, setFormat] = useState<'xlsx' | 'csv' | 'json'>('xlsx');
+  const [format, setFormat] = useState<'xlsx' | 'csv' | 'json' | 'tsv'>('xlsx');
 
   // Selected Fields
   const [fields, setFields] = useState<ExportOptions['fields']>({
@@ -33,6 +34,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     productName: true,
     sizeQuantity: true,
     variant: true,
+    colour: true,
     barcode: true,
     category: true,
     dateCaptured: true,
@@ -67,12 +69,30 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setFields((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     setExportSuccess(null);
     setExportError(null);
 
     try {
-      if (format === 'xlsx') {
+      if (format === 'tsv') {
+        const tsv = generateTSV(previewProducts, { includeHeader: true });
+        const copied = await copyTextToClipboard(tsv);
+        if (copied) {
+          setExportSuccess(`Copied ${previewProducts.length} rows to clipboard in TSV format! Ready to paste into Excel or Google Sheets.`);
+        } else {
+          // Trigger download as .tsv file
+          const blob = new Blob([tsv], { type: 'text/tab-separated-values;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `QuickStock_Products_${new Date().toISOString().slice(0, 10)}.tsv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          setExportSuccess(`Downloaded TSV file with ${previewProducts.length} products.`);
+        }
+      } else if (format === 'xlsx') {
         const result = exportToExcel(products, currentOptions);
         setExportSuccess(`Successfully generated ${result.filename} with ${result.count} product records.`);
       } else if (format === 'csv') {
@@ -104,7 +124,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 Export Supermarket Records
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Generate clean, Excel-compatible sheets formatted for Moniebook.
+                Excel (.xlsx), TSV (Clipboard/File), CSV, or full JSON backup.
               </p>
             </div>
           </div>
@@ -124,51 +144,61 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
               1. Choose Export File Format
             </label>
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => setFormat('xlsx')}
-                className={`p-3 rounded-xl border flex flex-col items-center justify-center space-y-1.5 transition ${
+                className={`p-2.5 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${
                   format === 'xlsx'
-                    ? 'border-sky-500 bg-sky-50/60 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500'
+                    ? 'border-sky-500 bg-sky-50/60 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500 font-bold'
                     : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
                 }`}
               >
-                <FileSpreadsheet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                <span className="font-bold text-xs">Excel (.xlsx)</span>
-                <span className="text-[10px] text-slate-400">Recommended</span>
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-xs">Excel (.xlsx)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFormat('tsv')}
+                className={`p-2.5 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${
+                  format === 'tsv'
+                    ? 'border-sky-500 bg-sky-50/60 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500 font-bold'
+                    : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                <Copy className="w-4 h-4 text-emerald-500" />
+                <span className="text-xs">TSV (Sheet)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setFormat('csv')}
-                className={`p-3 rounded-xl border flex flex-col items-center justify-center space-y-1.5 transition ${
+                className={`p-2.5 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${
                   format === 'csv'
-                    ? 'border-sky-500 bg-sky-50/60 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500'
+                    ? 'border-sky-500 bg-sky-50/60 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500 font-bold'
                     : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
                 }`}
               >
-                <FileText className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-                <span className="font-bold text-xs">CSV (.csv)</span>
-                <span className="text-[10px] text-slate-400">Text Spreadsheet</span>
+                <FileText className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                <span className="text-xs">CSV (.csv)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setFormat('json')}
-                className={`p-3 rounded-xl border flex flex-col items-center justify-center space-y-1.5 transition ${
+                className={`p-2.5 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${
                   format === 'json'
-                    ? 'border-sky-500 bg-sky-50/60 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500'
+                    ? 'border-sky-500 bg-sky-50/60 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500 font-bold'
                     : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
                 }`}
               >
-                <Database className="w-5 h-5 text-indigo-500" />
-                <span className="font-bold text-xs">Full JSON</span>
-                <span className="text-[10px] text-slate-400">System Backup</span>
+                <Database className="w-4 h-4 text-indigo-500" />
+                <span className="text-xs">JSON Backup</span>
               </button>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
-              💡 In both Excel and CSV, barcodes are strictly preserved as text so leading zeroes (e.g. 012345) are never lost.
+              💡 Barcodes are strictly preserved as text so leading zeroes (e.g. 012345) are never lost when opened in Excel.
             </p>
           </div>
 
@@ -187,6 +217,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   { key: 'productName', label: 'Product Name (Required)' },
                   { key: 'sizeQuantity', label: 'Size / Quantity' },
                   { key: 'variant', label: 'Variant' },
+                  { key: 'colour', label: 'Colour' },
                   { key: 'barcode', label: 'Barcode' },
                   { key: 'category', label: 'Category' },
                   { key: 'dateCaptured', label: 'Date Captured' },
@@ -270,7 +301,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 onChange={(e) => setFilterIncompleteOnly(e.target.checked)}
                 className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4"
               />
-              <span>Export only incomplete records (missing notes, variant, or category)</span>
+              <span>Export only incomplete records (missing size, variant, or category)</span>
             </label>
           </div>
 
@@ -303,7 +334,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             className="flex items-center space-x-2 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition"
           >
             <Download className="w-4 h-4" />
-            <span>Generate & Download</span>
+            <span>Generate & Export</span>
           </button>
         </div>
       </div>

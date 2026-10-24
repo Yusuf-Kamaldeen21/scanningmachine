@@ -19,10 +19,10 @@ export function filterProductsForExport(
       if (item.dateCaptured !== options.filterDate) return false;
     }
 
-    // Incomplete records only (missing optional variant, category, notes, or empty barcode)
+    // Incomplete records only (missing size, variant, category, or empty barcode)
     if (options.filterIncompleteOnly) {
       const isIncomplete =
-        !item.barcode || !item.category || !item.variant || !item.notes;
+        !item.barcode || !item.category || !item.variant || !item.sizeQuantity;
       if (!isIncomplete) return false;
     }
 
@@ -31,7 +31,98 @@ export function filterProductsForExport(
 }
 
 /**
- * Formats row objects based on selected fields
+ * Clean string value for TSV/CSV: prevents embedded tabs and newlines from corrupting spreadsheet rows.
+ */
+function sanitizeSpreadsheetField(value: string | undefined | null, fallback = 'N/A'): string {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+  return value.replace(/[\t\r\n]+/g, ' ').trim();
+}
+
+/**
+ * Generates clean Tab-Separated Values (TSV) with column order:
+ * Brand \t Product Name \t Size/Quantity \t Variant \t Colour \t Barcode \t Category \t Date
+ *
+ * One product per row, suitable for direct pasting into Excel, Google Sheets, or a notebook.
+ */
+export function generateTSV(
+  products: ProductRecord[],
+  options: { includeHeader?: boolean; namesOnly?: boolean } = { includeHeader: true, namesOnly: false }
+): string {
+  if (options.namesOnly) {
+    const lines = products.map((p) =>
+      sanitizeSpreadsheetField(`${p.brand} ${p.productName} (${p.sizeQuantity})`.trim())
+    );
+    if (options.includeHeader) {
+      return ['Product Name', ...lines].join('\n');
+    }
+    return lines.join('\n');
+  }
+
+  const rows: string[] = [];
+
+  if (options.includeHeader !== false) {
+    rows.push(['Brand', 'Product Name', 'Size/Quantity', 'Variant', 'Colour', 'Barcode', 'Category', 'Date'].join('\t'));
+  }
+
+  for (const p of products) {
+    const brand = sanitizeSpreadsheetField(p.brand, 'Unknown Brand');
+    const name = sanitizeSpreadsheetField(p.productName, 'Unknown Product');
+    const size = sanitizeSpreadsheetField(p.sizeQuantity, 'N/A');
+    const variant = sanitizeSpreadsheetField(p.variant, 'N/A');
+    const colour = sanitizeSpreadsheetField(p.colour, 'N/A');
+    const barcode = sanitizeSpreadsheetField(p.barcode, '');
+    const category = sanitizeSpreadsheetField(p.category, 'General');
+    const date = sanitizeSpreadsheetField(p.dateCaptured, new Date().toISOString().slice(0, 10));
+
+    rows.push([brand, name, size, variant, colour, barcode, category, date].join('\t'));
+  }
+
+  return rows.join('\n');
+}
+
+/**
+ * Copies text to system clipboard with fallback for non-secure contexts or permission restrictions.
+ */
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  // 1. Modern Navigator Clipboard API
+  if (navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // 2. Fallback via hidden textarea element
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    textArea.style.width = '2em';
+    textArea.style.height = '2em';
+    textArea.style.padding = '0';
+    textArea.style.border = 'none';
+    textArea.style.outline = 'none';
+    textArea.style.boxShadow = 'none';
+    textArea.style.background = 'transparent';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Formats row objects based on selected fields for Excel and CSV
  */
 function buildExportRows(products: ProductRecord[], options: ExportOptions) {
   return products.map((item) => {
@@ -41,6 +132,7 @@ function buildExportRows(products: ProductRecord[], options: ExportOptions) {
     if (options.fields.productName) row['Product Name'] = item.productName;
     if (options.fields.sizeQuantity) row['Size / Quantity'] = item.sizeQuantity;
     if (options.fields.variant) row['Variant'] = item.variant || '';
+    if (options.fields.colour) row['Colour'] = item.colour || 'N/A';
     if (options.fields.barcode) row['Barcode'] = item.barcode ? `${item.barcode}` : '';
     if (options.fields.category) row['Category'] = item.category || 'Uncategorized';
     if (options.fields.dateCaptured) row['Date Captured'] = item.dateCaptured;
@@ -70,7 +162,7 @@ export function exportToCSV(products: ProductRecord[], options: ExportOptions): 
 
   for (const row of rows) {
     const line = headers.map((header) => {
-      let val = row[header] ?? '';
+      const val = row[header] ?? '';
       // If header is Barcode, format as text formula ="12345" so Excel preserves leading zeros
       if (header === 'Barcode' && val) {
         return `="""${val}"""`;
@@ -149,7 +241,7 @@ export function exportToExcel(products: ProductRecord[], options: ExportOptions)
  */
 export function exportToJSON(products: ProductRecord[]): { filename: string; count: number } {
   const backupData = {
-    version: '1.0',
+    version: '2.0',
     exportDate: new Date().toISOString(),
     totalProducts: products.length,
     products,

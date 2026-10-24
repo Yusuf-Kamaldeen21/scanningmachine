@@ -250,6 +250,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Bulk Capture Workflow Preferences
             </label>
             <div className="space-y-2.5">
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs mb-1">
+                  Default Scanning Mode
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => onUpdateSettings({ scanMode: 'fast' })}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition border ${
+                      settings.scanMode === 'fast'
+                        ? 'bg-sky-600 text-white border-sky-600'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    ⚡ Fast Scan Mode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateSettings({ scanMode: 'review' })}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition border ${
+                      settings.scanMode === 'review'
+                        ? 'bg-sky-600 text-white border-sky-600'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    👁️ Review Mode
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Fast Scan automatically saves verified FMCG barcodes and keeps the camera live. Review Mode pauses on every item for inspection.
+                </p>
+              </div>
+
               <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 cursor-pointer">
                 <div>
                   <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
