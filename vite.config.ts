@@ -38,4 +38,8 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 2000,
+  },
 })

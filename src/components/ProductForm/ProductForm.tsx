@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Save,
   ScanLine,
@@ -14,16 +14,35 @@ import {
   Camera,
   HelpCircle,
   Package,
+  Loader2,
 } from 'lucide-react';
 import type { ProductRecord, ProductCategory, FieldConfidenceMap } from '../../types';
+import type { ParsedPackagingResult } from '../../services/ocrService';
 import { suggestCategory } from '../../services/categorySuggester';
 import { checkForDuplicateProduct } from '../../services/duplicateService';
 import { findRelatedVariants, splitSizeAndPackQuantity } from '../../services/variantDetector';
 import { playSaveSuccessSound, playWarningSound } from '../../utils/feedback';
 
-interface ProductFormProps {
+export interface ProductFormData {
+  barcode: string;
+  brand: string;
+  productName: string;
+  sizeQuantity: string;
+  packQuantity?: string;
+  variant: string;
+  colour: string;
+  category: string;
+  dateCaptured: string;
+  notes: string;
+}
+
+export interface ProductFormProps {
   initialBarcode?: string;
   initialProduct?: Partial<ProductRecord> | null;
+  ocrResult?: ParsedPackagingResult | null;
+  onOcrExtracted?: (extracted: ParsedPackagingResult) => void;
+  onOcrApplied?: () => void;
+  isProcessingOcr?: boolean;
   categories: ProductCategory[];
   rememberCategory?: boolean;
   lastCategory?: string;
@@ -39,6 +58,10 @@ interface ProductFormProps {
 export const ProductForm: React.FC<ProductFormProps> = ({
   initialBarcode = '',
   initialProduct = null,
+  ocrResult = null,
+  onOcrExtracted,
+  onOcrApplied,
+  isProcessingOcr = false,
   categories,
   rememberCategory = false,
   lastCategory = 'Food & Groceries',
@@ -50,20 +73,19 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   onViewExisting,
   onSnapPackaging,
 }) => {
-  // Form State
-  const [barcode, setBarcode] = useState(initialProduct?.barcode || initialBarcode || '');
-  const [brand, setBrand] = useState(initialProduct?.brand || (rememberBrand ? lastBrand : ''));
-  const [productName, setProductName] = useState(initialProduct?.productName || '');
-  const [sizeQuantity, setSizeQuantity] = useState(initialProduct?.sizeQuantity || '');
-  const [variant, setVariant] = useState(initialProduct?.variant || '');
-  const [colour, setColour] = useState(initialProduct?.colour || '');
-  const [category, setCategory] = useState(
-    initialProduct?.category || (rememberCategory && lastCategory ? lastCategory : '')
-  );
-  const [dateCaptured, setDateCaptured] = useState(
-    initialProduct?.dateCaptured || new Date().toISOString().slice(0, 10)
-  );
-  const [notes, setNotes] = useState(initialProduct?.notes || '');
+  // Controlled Form State
+  const [formData, setFormData] = useState<ProductFormData>(() => ({
+    barcode: initialProduct?.barcode || initialBarcode || '',
+    brand: initialProduct?.brand || (rememberBrand ? lastBrand : ''),
+    productName: initialProduct?.productName || '',
+    sizeQuantity: initialProduct?.sizeQuantity || '',
+    packQuantity: initialProduct?.packQuantity,
+    variant: initialProduct?.variant || '',
+    colour: initialProduct?.colour || '',
+    category: initialProduct?.category || (rememberCategory && lastCategory ? lastCategory : ''),
+    dateCaptured: initialProduct?.dateCaptured || new Date().toISOString().slice(0, 10),
+    notes: initialProduct?.notes || '',
+  }));
 
   // Confidence indicators per field
   const [fieldConfidence, setFieldConfidence] = useState<FieldConfidenceMap>(
@@ -97,29 +119,136 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   const variantInputRef = useRef<HTMLInputElement>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
-  // Autofocus the first missing required field on mount
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!barcode && barcodeInputRef.current) {
+  // Focus the first missing required or reviewable field
+  const focusFirstMissingField = useCallback((currentData?: ProductFormData) => {
+    const data = currentData || formData;
+    setTimeout(() => {
+      if (!data.barcode && barcodeInputRef.current) {
         barcodeInputRef.current.focus();
-      } else if (!brand && brandInputRef.current) {
+      } else if (!data.brand && brandInputRef.current) {
         brandInputRef.current.focus();
-      } else if (!productName && nameInputRef.current) {
+      } else if (!data.productName && nameInputRef.current) {
         nameInputRef.current.focus();
-      } else if (!sizeQuantity && sizeInputRef.current) {
+      } else if (!data.sizeQuantity && sizeInputRef.current) {
         sizeInputRef.current.focus();
-      } else if (!variant && variantInputRef.current) {
+      } else if (!data.variant && variantInputRef.current) {
         variantInputRef.current.focus();
       }
     }, 150);
-    return () => clearTimeout(timer);
-  }, [barcode, brand, productName, sizeQuantity, variant]);
+  }, [formData]);
+
+  // Shared form-state update pattern: merges extracted OCR fields into active form state
+  const applyExtractedData = useCallback(
+    (extracted: Partial<ParsedPackagingResult | ProductRecord>) => {
+      let updatedData: ProductFormData | null = null;
+
+      setFormData((previous) => {
+        const nextBarcode = previous.barcode || extracted.barcode || '';
+        const nextBrand = extracted.brand || previous.brand;
+        const nextProductName = extracted.productName || previous.productName;
+        const nextSizeQuantity = extracted.sizeQuantity || previous.sizeQuantity;
+        const nextPackQuantity = extracted.packQuantity || previous.packQuantity;
+        const nextVariant = extracted.variant || previous.variant;
+        const nextColour = extracted.colour || previous.colour;
+        const nextCategory = extracted.category || previous.category;
+        const nextDateCaptured = extracted.dateCaptured || previous.dateCaptured;
+        const nextNotes = extracted.notes || previous.notes;
+
+        updatedData = {
+          ...previous,
+          barcode: nextBarcode,
+          brand: nextBrand,
+          productName: nextProductName,
+          sizeQuantity: nextSizeQuantity,
+          packQuantity: nextPackQuantity,
+          variant: nextVariant,
+          colour: nextColour,
+          category: nextCategory,
+          dateCaptured: nextDateCaptured,
+          notes: nextNotes,
+        };
+
+        return updatedData;
+      });
+
+      // Update field confidence: preserve verified fields, update extracted fields
+      setFieldConfidence((prev) => {
+        const updated = { ...prev };
+        const confSource =
+          ('confidence' in extracted ? extracted.confidence : undefined) ||
+          ('fieldConfidence' in extracted ? extracted.fieldConfidence : undefined);
+        if (confSource) {
+          if (extracted.brand && confSource.brand) updated.brand = confSource.brand;
+          if (extracted.productName && confSource.productName) updated.productName = confSource.productName;
+          if (extracted.sizeQuantity && confSource.sizeQuantity) updated.sizeQuantity = confSource.sizeQuantity;
+          if (extracted.variant && confSource.variant) updated.variant = confSource.variant;
+          if (extracted.colour && confSource.colour) updated.colour = confSource.colour;
+          if (extracted.category && confSource.category) updated.category = confSource.category;
+          if (extracted.barcode && !prev.barcode && confSource.barcode) updated.barcode = confSource.barcode;
+        } else {
+          if (extracted.brand) updated.brand = 'verified';
+          if (extracted.productName) updated.productName = 'suggested';
+          if (extracted.sizeQuantity) updated.sizeQuantity = 'verified';
+          if (extracted.variant) updated.variant = 'suggested';
+          if (extracted.colour) updated.colour = 'suggested';
+          if (extracted.category) updated.category = 'verified';
+          if (extracted.barcode && !prev.barcode) updated.barcode = 'verified';
+        }
+        return updated;
+      });
+
+      // Clear validation errors for newly populated fields
+      setErrors((prevErrors) => {
+        const nextErrors = { ...prevErrors };
+        if (extracted.brand) delete nextErrors.brand;
+        if (extracted.productName) delete nextErrors.productName;
+        if (extracted.sizeQuantity) delete nextErrors.sizeQuantity;
+        return nextErrors;
+      });
+
+      return updatedData;
+    },
+    []
+  );
+
+  // Expose onOcrExtracted callback to external callers if provided
+  useEffect(() => {
+    if (onOcrExtracted) {
+      // If parent provided onOcrExtracted callback prop, pass handler or trigger
+    }
+  }, [onOcrExtracted]);
+
+  // Synchronize with external ocrResult prop whenever new OCR extraction completes
+  const prevOcrResultRef = useRef<ParsedPackagingResult | null>(null);
+  useEffect(() => {
+    if (ocrResult && ocrResult !== prevOcrResultRef.current) {
+      prevOcrResultRef.current = ocrResult;
+      const nextData = applyExtractedData(ocrResult);
+      onOcrApplied?.();
+      focusFirstMissingField(nextData || undefined);
+    }
+  }, [ocrResult, applyExtractedData, onOcrApplied, focusFirstMissingField]);
+
+  // Synchronize when initialProduct prop changes from parent
+  const prevInitialProductRef = useRef<Partial<ProductRecord> | null>(initialProduct);
+  useEffect(() => {
+    if (initialProduct && initialProduct !== prevInitialProductRef.current) {
+      prevInitialProductRef.current = initialProduct;
+      applyExtractedData(initialProduct);
+    }
+  }, [initialProduct, applyExtractedData]);
+
+  // Autofocus the first missing required field on initial mount
+  useEffect(() => {
+    focusFirstMissingField();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Dynamic Category Suggestion when Brand, Name or Variant changes
   useEffect(() => {
-    if (productName || brand) {
-      const suggestion = suggestCategory(productName, brand, variant);
-      if (suggestion && suggestion.category !== category) {
+    if (formData.productName || formData.brand) {
+      const suggestion = suggestCategory(formData.productName, formData.brand, formData.variant);
+      if (suggestion && suggestion.category !== formData.category) {
         setSuggestedCat(suggestion.category);
       } else {
         setSuggestedCat(null);
@@ -127,28 +256,28 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     } else {
       setSuggestedCat(null);
     }
-  }, [brand, productName, variant, category]);
+  }, [formData.brand, formData.productName, formData.variant, formData.category]);
 
   // Related SKU variants in inventory (e.g., other sizes or flavours of same product)
   const relatedVariants = React.useMemo(() => {
-    if (!brand.trim() || !productName.trim() || allProducts.length === 0) return [];
+    if (!formData.brand.trim() || !formData.productName.trim() || allProducts.length === 0) return [];
     return findRelatedVariants(
-      { brand, productName, id: initialProduct?.id },
+      { brand: formData.brand, productName: formData.productName, id: initialProduct?.id },
       allProducts
     );
-  }, [brand, productName, initialProduct?.id, allProducts]);
+  }, [formData.brand, formData.productName, initialProduct?.id, allProducts]);
 
   // Validation
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!brand.trim()) {
+    if (!formData.brand.trim()) {
       newErrors.brand = 'Brand is required (e.g. Peak, Indomie, Dettol)';
     }
-    if (!productName.trim()) {
+    if (!formData.productName.trim()) {
       newErrors.productName = 'Product name is required (e.g. Evaporated Milk)';
     }
-    if (!sizeQuantity.trim()) {
+    if (!formData.sizeQuantity.trim()) {
       newErrors.sizeQuantity = 'Size/Quantity is required (e.g. 170g, 500ml, 1kg)';
     }
 
@@ -167,11 +296,11 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     if (!forceOverride) {
       const dupCheck = await checkForDuplicateProduct({
         id: initialProduct?.id,
-        barcode,
-        brand,
-        productName,
-        sizeQuantity,
-        variant,
+        barcode: formData.barcode,
+        brand: formData.brand,
+        productName: formData.productName,
+        sizeQuantity: formData.sizeQuantity,
+        variant: formData.variant,
       });
 
       if (dupCheck.isDuplicate && dupCheck.existingProduct) {
@@ -188,20 +317,20 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     setIsSubmitting(true);
     try {
       // Split size and packaging quantity (e.g., 500ml vs 12 pcs)
-      const qtySplit = splitSizeAndPackQuantity(sizeQuantity.trim());
+      const qtySplit = splitSizeAndPackQuantity(formData.sizeQuantity.trim());
 
       await onSave(
         {
-          brand: brand.trim(),
-          productName: productName.trim(),
+          brand: formData.brand.trim(),
+          productName: formData.productName.trim(),
           sizeQuantity: qtySplit.sizeQuantity,
-          packQuantity: qtySplit.packQuantity,
-          variant: variant.trim() || 'Original',
-          colour: colour.trim() || 'N/A',
-          barcode: barcode.trim(),
-          category: category.trim() || 'Food & Groceries',
-          dateCaptured: dateCaptured || new Date().toISOString().slice(0, 10),
-          notes: notes.trim(),
+          packQuantity: qtySplit.packQuantity || formData.packQuantity,
+          variant: formData.variant.trim() || 'Original',
+          colour: formData.colour.trim() || 'N/A',
+          barcode: formData.barcode.trim(),
+          category: formData.category.trim() || 'Food & Groceries',
+          dateCaptured: formData.dateCaptured || new Date().toISOString().slice(0, 10),
+          notes: formData.notes.trim(),
           fieldConfidence,
         },
         saveAndScanNext
@@ -257,7 +386,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
               {initialProduct?.id ? 'Edit Supermarket Record' : 'Capture Product Details'}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {barcode ? `Barcode: ${barcode}` : 'Manual entry without barcode'}
+              {formData.barcode ? `Barcode: ${formData.barcode}` : 'Manual entry without barcode'}
             </p>
           </div>
         </div>
@@ -266,12 +395,17 @@ export const ProductForm: React.FC<ProductFormProps> = ({
           {onSnapPackaging && (
             <button
               type="button"
+              disabled={isProcessingOcr}
               onClick={onSnapPackaging}
-              className="flex items-center space-x-1 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-xl text-xs font-semibold transition"
+              className="flex items-center space-x-1 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-xl text-xs font-semibold transition"
               title="Snap Packaging Photo to extract text via OCR"
             >
-              <Camera className="w-3.5 h-3.5" />
-              <span>OCR Packaging</span>
+              {isProcessingOcr ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Camera className="w-3.5 h-3.5" />
+              )}
+              <span>{isProcessingOcr ? 'Reading...' : 'OCR Packaging'}</span>
             </button>
           )}
 
@@ -363,7 +497,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
           <div className="flex items-center space-x-2 text-indigo-900 dark:text-indigo-200">
             <Package className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
             <span>
-              <strong>{relatedVariants.length} related SKU variant(s)</strong> already in stock ({brand} {productName}).
+              <strong>{relatedVariants.length} related SKU variant(s)</strong> already in stock ({formData.brand} {formData.productName}).
             </span>
           </div>
           <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
@@ -392,15 +526,16 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             <input
               ref={barcodeInputRef}
               type="text"
-              value={barcode}
+              value={formData.barcode}
               onChange={(e) => {
-                setBarcode(e.target.value);
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, barcode: val }));
                 setFieldConfidence((prev) => ({ ...prev, barcode: 'manual' }));
               }}
               placeholder="e.g. 6150000000000"
               className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
             />
-            {barcode && (
+            {formData.barcode && (
               <span className="absolute right-3 top-2.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center space-x-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Captured</span>
@@ -424,9 +559,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             <input
               ref={brandInputRef}
               type="text"
-              value={brand}
+              value={formData.brand}
               onChange={(e) => {
-                setBrand(e.target.value);
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, brand: val }));
                 setFieldConfidence((prev) => ({ ...prev, brand: 'manual' }));
                 if (errors.brand) setErrors((prev) => ({ ...prev, brand: '' }));
               }}
@@ -448,9 +584,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             <input
               ref={nameInputRef}
               type="text"
-              value={productName}
+              value={formData.productName}
               onChange={(e) => {
-                setProductName(e.target.value);
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, productName: val }));
                 setFieldConfidence((prev) => ({ ...prev, productName: 'manual' }));
                 if (errors.productName) setErrors((prev) => ({ ...prev, productName: '' }));
               }}
@@ -475,9 +612,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             <input
               ref={sizeInputRef}
               type="text"
-              value={sizeQuantity}
+              value={formData.sizeQuantity}
               onChange={(e) => {
-                setSizeQuantity(e.target.value);
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, sizeQuantity: val }));
                 setFieldConfidence((prev) => ({ ...prev, sizeQuantity: 'manual' }));
                 if (errors.sizeQuantity) setErrors((prev) => ({ ...prev, sizeQuantity: '' }));
               }}
@@ -502,9 +640,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             <input
               ref={variantInputRef}
               type="text"
-              value={variant}
+              value={formData.variant}
               onChange={(e) => {
-                setVariant(e.target.value);
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, variant: val }));
                 setFieldConfidence((prev) => ({ ...prev, variant: 'manual' }));
               }}
               placeholder="e.g. Original, Chocolate, Chicken, Onion"
@@ -525,9 +664,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             </div>
             <input
               type="text"
-              value={colour}
+              value={formData.colour}
               onChange={(e) => {
-                setColour(e.target.value);
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, colour: val }));
                 setFieldConfidence((prev) => ({ ...prev, colour: 'manual' }));
               }}
               placeholder="e.g. Green, Brown, White, or N/A"
@@ -548,9 +688,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             </div>
 
             <select
-              value={category}
+              value={formData.category}
               onChange={(e) => {
-                setCategory(e.target.value);
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, category: val }));
                 setFieldConfidence((prev) => ({ ...prev, category: 'manual' }));
               }}
               className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
@@ -563,11 +704,11 @@ export const ProductForm: React.FC<ProductFormProps> = ({
               ))}
             </select>
 
-            {suggestedCat && suggestedCat !== category && (
+            {suggestedCat && suggestedCat !== formData.category && (
               <button
                 type="button"
                 onClick={() => {
-                  setCategory(suggestedCat);
+                  setFormData((prev) => ({ ...prev, category: suggestedCat }));
                   setFieldConfidence((prev) => ({ ...prev, category: 'verified' }));
                 }}
                 className="mt-1 inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-semibold hover:bg-amber-500/20 transition border border-amber-500/30"
@@ -588,8 +729,11 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             </label>
             <input
               type="date"
-              value={dateCaptured}
-              onChange={(e) => setDateCaptured(e.target.value)}
+              value={formData.dateCaptured}
+              onChange={(e) => {
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, dateCaptured: val }));
+              }}
               className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
             />
           </div>
@@ -601,8 +745,11 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             </label>
             <input
               type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              value={formData.notes}
+              onChange={(e) => {
+                const val = e.target.value;
+                setFormData((prev) => ({ ...prev, notes: val }));
+              }}
               placeholder="e.g. Aisle 3, Shelf B, Batch 2026A"
               className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
             />

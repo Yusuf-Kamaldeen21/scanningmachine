@@ -228,9 +228,9 @@ export function splitSizeAndPackQuantity(input: string): QuantitySplitResult {
     return { sizeQuantity: '' };
   }
 
-  // Pattern A: "12 x 170g" or "24x500ml" or "40 x 70g"
+  // Pattern A: "12 x 170g" or "24x500ml" or "40 x 70g" or "12 × 50g"
   const multiplierMatch = trimmed.match(
-    /^(\d+)\s*(?:x|\*)\s*(\d+(?:\.\d+)?\s*(?:g|kg|ml|cl|l|oz|fl\s*oz|ltr))\b/i
+    /^(\d+)\s*(?:x|\*|×|\u00D7)\s*(\d+(?:\.\d+)?\s*(?:g|kg|ml|cl|ltr|l|oz|fl\s*oz))\b/i
   );
   if (multiplierMatch) {
     const packCount = multiplierMatch[1];

@@ -2,6 +2,7 @@ import { createWorker } from 'tesseract.js';
 import type { FieldConfidenceMap } from '../types';
 import { suggestCategory } from './categorySuggester';
 import { detectVariant, detectColour, splitSizeAndPackQuantity } from './variantDetector';
+import { SUPERMARKET_CATALOGUE } from './productLookup';
 
 export interface ParsedPackagingResult {
   rawText: string;
@@ -12,6 +13,8 @@ export interface ParsedPackagingResult {
   variant: string;
   colour: string;
   category: string;
+  barcode?: string;
+  dateCaptured?: string;
   confidence: FieldConfidenceMap;
   notes?: string;
 }
@@ -186,10 +189,10 @@ export async function recognizePackagingText(
  * Parses raw text extracted from packaging OCR into structured product fields.
  */
 export function parseProductText(text: string): ParsedPackagingResult {
-  const lines = text
+  const rawLines = text
     .split(/[\r\n]+/)
     .map((l) => l.trim())
-    .filter((l) => l.length > 1 && !/^[0-9\W]+$/.test(l));
+    .filter((l) => l.length > 0);
 
   const confidence: FieldConfidenceMap = {
     brand: 'needs-review',
@@ -198,14 +201,45 @@ export function parseProductText(text: string): ParsedPackagingResult {
     variant: 'needs-review',
     colour: 'needs-review',
     category: 'needs-review',
+    barcode: 'needs-review',
   };
 
+  let detectedBarcode = '';
   let detectedBrand = '';
   let detectedSize = '';
   let detectedPackQty = '';
 
-  // 1. Identify Brand: match against KNOWN_BRANDS or pick top prominent word
-  for (const b of KNOWN_BRANDS) {
+  // 1. Identify Barcode: Check for explicit barcode tags, catalogue barcodes, or 8/12-14 digit sequences
+  const labeledBarcodeMatch = text.match(/\b(?:barcode|ean|upc|code)\s*[:#-]?\s*(\d{8}|\d{12,14})\b/i);
+  if (labeledBarcodeMatch) {
+    detectedBarcode = labeledBarcodeMatch[1];
+    confidence.barcode = 'verified';
+  } else {
+    // Check against SUPERMARKET_CATALOGUE barcodes first for high confidence
+    for (const code of Object.keys(SUPERMARKET_CATALOGUE)) {
+      if (text.includes(code)) {
+        detectedBarcode = code;
+        confidence.barcode = 'verified';
+        break;
+      }
+    }
+
+    if (!detectedBarcode) {
+      const standaloneBarcodeMatch = text.match(/\b(\d{13}|\d{12}|\d{14}|\d{8})\b/);
+      if (standaloneBarcodeMatch) {
+        const val = standaloneBarcodeMatch[1];
+        // Exclude 8-digit numbers that look like dates (e.g. 20261025)
+        if (!/^20\d{6}$/.test(val)) {
+          detectedBarcode = val;
+          confidence.barcode = 'suggested';
+        }
+      }
+    }
+  }
+
+  // 2. Identify Brand: match against KNOWN_BRANDS (sorted longest first to avoid substring collision)
+  const sortedKnownBrands = [...KNOWN_BRANDS].sort((a, b) => b.length - a.length);
+  for (const b of sortedKnownBrands) {
     const regex = new RegExp(`\\b${escapeRegExp(b)}\\b`, 'i');
     if (regex.test(text)) {
       detectedBrand = b;
@@ -214,20 +248,41 @@ export function parseProductText(text: string): ParsedPackagingResult {
     }
   }
 
-  // Fallback brand from first line if not found in dictionary
-  if (!detectedBrand && lines.length > 0) {
-    const firstLine = lines[0].replace(/[^a-zA-Z0-9\s]/g, '').trim();
-    if (firstLine && firstLine.length <= 25) {
-      detectedBrand = firstLine;
-      confidence.brand = 'suggested';
+  // Patterns for lines that are definitely NOT brand names (ingredients, nutritional facts, instructions, etc.)
+  const NON_BRAND_PATTERNS = /^(ingredients?|nutrition|facts|serving|directions?|instructions?|store|keep|batch|mfg|exp|expiry|best before|net wt|net weight|barcode|ean|upc|flavour|flavor|product of|warning|caution|contains|made in|produced|distributed|recycle|halal|nafdac|reg|consumer care|tel|email|phone|po box|www|http|composition|storage|special|delicious|original taste|premium quality|quality|rich & creamy)\b/i;
+
+  // Fallback brand identification from lines if not in KNOWN_BRANDS
+  if (!detectedBrand) {
+    for (const line of rawLines) {
+      const cleanLine = line.replace(/[^a-zA-Z0-9\s'-]/g, '').trim();
+      const words = cleanLine.split(/\s+/).filter(Boolean);
+      // Valid brand candidates are concise (1-3 words, 2-25 characters), not noise/instructions, and not pure numbers
+      if (
+        words.length >= 1 &&
+        words.length <= 3 &&
+        cleanLine.length >= 2 &&
+        cleanLine.length <= 25 &&
+        !NON_BRAND_PATTERNS.test(cleanLine) &&
+        !/^\d+$/.test(cleanLine)
+      ) {
+        const variantCheck = detectVariant(cleanLine);
+        const sizeCheck = cleanLine.match(/\b\d+\s*(?:g|kg|ml|cl|l|oz|pieces|pcs)\b/i);
+        if (!variantCheck.variant && !sizeCheck) {
+          detectedBrand = cleanLine;
+          confidence.brand = 'needs-review';
+          break;
+        }
+      }
     }
   }
 
-  // 2. Identify Size / Quantity & Pack configurations
-  // Patterns like "170g", "500ml", "1kg", "1.5L", "12 x 170g", "70g (Pack of 12)"
-  const sizeMultiplierRegex = /\b(\d+)\s*(?:x|\*)\s*(\d+(?:\.\d+)?\s*(?:g|kg|ml|cl|l|oz|fl\s*oz|ltr))\b/i;
-  const sizeStandardRegex = /\b(\d+(?:\.\d+)?\s*(?:g|kg|ml|cl|l|oz|fl\s*oz|ltr|litres?|grams?))\b/i;
-  const packOnlyRegex = /\b(\d+)\s*(?:pcs|pieces|sachets|packs|pk|bottles|cans|bars|rolls)\b/i;
+  // 3. Identify Size / Quantity & Multipack configurations
+  // Multipliers: e.g. "12 x 170g", "12 × 50g", "40 x 70g", "6 * 330ml"
+  const sizeMultiplierRegex = /\b(\d+)\s*(?:x|\*|×|\u00D7)\s*(\d+(?:\.\d+)?\s*(?:g|kg|ml|cl|ltr|l|oz|fl\s*oz|grams?|kilograms?|litres?|millilitres?))\b/i;
+  // Standard units: e.g. "70g", "170g", "500ml", "1L", "5kg", "1.5L", "250ml"
+  const sizeStandardRegex = /\b(\d+(?:\.\d+)?)\s*(kg|g|mg|ml|cl|ltr|l|oz|fl\s*oz|litres?|grams?)\b/i;
+  // Multipack piece counts: e.g. "6 pieces", "12 pieces", "50 pieces", "24 sachets"
+  const packOnlyRegex = /\b(\d+)\s*(?:pcs|pieces|sachets|packs|pk|bottles|cans|bars|rolls|tablets)\b/i;
 
   const multiplierMatch = text.match(sizeMultiplierRegex);
   if (multiplierMatch) {
@@ -238,7 +293,15 @@ export function parseProductText(text: string): ParsedPackagingResult {
   } else {
     const standardMatch = text.match(sizeStandardRegex);
     if (standardMatch) {
-      detectedSize = standardMatch[1].replace(/\s+/g, '');
+      const num = standardMatch[1];
+      let unit = standardMatch[2];
+      const lowerUnit = unit.toLowerCase();
+      if (lowerUnit === 'l' || lowerUnit === 'ltr' || lowerUnit === 'litres' || lowerUnit === 'litre') {
+        unit = 'L';
+      } else {
+        unit = lowerUnit;
+      }
+      detectedSize = `${num}${unit}`;
       confidence.sizeQuantity = 'verified';
     }
     const packMatch = text.match(packOnlyRegex);
@@ -246,59 +309,87 @@ export function parseProductText(text: string): ParsedPackagingResult {
       detectedPackQty = packMatch[0];
       if (!detectedSize) {
         detectedSize = detectedPackQty;
-        confidence.sizeQuantity = 'suggested';
+        confidence.sizeQuantity = 'verified';
       }
     }
   }
 
-  // 3. Identify Variant
-  const variantResult = detectVariant(text);
+  // 4. Identify Variant
+  const variantResult = detectVariant(text, { brand: detectedBrand });
   const detectedVariant = variantResult.variant;
   if (detectedVariant) {
     confidence.variant = variantResult.confidence;
   }
 
-  // 4. Identify Colour
+  // 5. Identify Colour
   const colourResult = detectColour(text);
   const detectedColour = colourResult ? colourResult.colour : '';
   if (detectedColour) {
     confidence.colour = colourResult?.confidence || 'suggested';
   }
 
-  // 5. Identify Product Name: clean text after removing brand, size, variant tokens
+  // 6. Identify Product Name: extract informative product name excluding brand, size, variant, colour, barcode tokens
   let candidateName = '';
-  for (const line of lines) {
-    let cleanLine = line;
-    if (detectedBrand) {
-      cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedBrand)}\\b`, 'gi'), '');
-    }
-    if (detectedSize) {
-      cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedSize)}\\b`, 'gi'), '');
-    }
-    if (detectedVariant) {
-      cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedVariant)}\\b`, 'gi'), '');
-    }
-    cleanLine = cleanLine.replace(/[^a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
-    if (cleanLine.length >= 3 && cleanLine.length <= 40) {
-      // Prioritize food/supermarket descriptors
-      candidateName = cleanLine;
-      confidence.productName = 'suggested';
-      break;
+  // If a known barcode was identified, catalogue has the verified product name
+  if (detectedBarcode && SUPERMARKET_CATALOGUE[detectedBarcode]) {
+    candidateName = SUPERMARKET_CATALOGUE[detectedBarcode].productName;
+    confidence.productName = 'verified';
+  } else {
+    for (const line of rawLines) {
+      let cleanLine = line;
+      if (detectedBrand) {
+        cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedBrand)}\\b`, 'gi'), '');
+      }
+      if (detectedSize) {
+        cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedSize)}\\b`, 'gi'), '');
+      }
+      if (detectedPackQty) {
+        cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedPackQty)}\\b`, 'gi'), '');
+      }
+      if (detectedVariant) {
+        cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedVariant)}\\b`, 'gi'), '');
+      }
+      if (detectedColour) {
+        cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedColour)}\\b`, 'gi'), '');
+      }
+      if (detectedBarcode) {
+        cleanLine = cleanLine.replace(new RegExp(`\\b${escapeRegExp(detectedBarcode)}\\b`, 'g'), '');
+      }
+
+      // Clean special characters but preserve alphanumeric and ampersands
+      cleanLine = cleanLine.replace(/[^a-zA-Z0-9\s&'-]/g, ' ').replace(/\s+/g, ' ').trim();
+
+      if (NON_BRAND_PATTERNS.test(cleanLine)) {
+        continue;
+      }
+
+      if (cleanLine.length >= 3 && cleanLine.length <= 40) {
+        candidateName = cleanLine;
+        confidence.productName = 'suggested';
+        break;
+      }
+    }
+
+    if (!candidateName && rawLines.length > 1) {
+      const secondLine = rawLines[1].replace(/[^a-zA-Z0-9\s&'-]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (secondLine && !NON_BRAND_PATTERNS.test(secondLine) && secondLine.length <= 40) {
+        candidateName = secondLine;
+        confidence.productName = 'suggested';
+      }
     }
   }
 
-  if (!candidateName && lines.length > 1) {
-    candidateName = lines[1].slice(0, 35).trim();
-  }
-
-  // 6. Suggest Category
+  // 7. Suggest Category: call existing category suggestion engine
+  let detectedCategory = '';
   const catResult = suggestCategory(candidateName, detectedBrand, detectedVariant);
-  const detectedCategory = catResult ? catResult.category : 'Food & Groceries';
-  if (catResult && catResult.confidence >= 70) {
-    confidence.category = 'verified';
-  } else if (catResult) {
-    confidence.category = 'suggested';
+  if (catResult && catResult.confidence >= 60) {
+    detectedCategory = catResult.category;
+    confidence.category = catResult.confidence >= 75 ? 'verified' : 'suggested';
+  } else {
+    // If not determined confidently, leave unselected and flag for review
+    detectedCategory = '';
+    confidence.category = 'needs-review';
   }
 
   return {
@@ -309,6 +400,7 @@ export function parseProductText(text: string): ParsedPackagingResult {
     packQuantity: detectedPackQty || undefined,
     variant: detectedVariant || '',
     colour: detectedColour || '',
+    barcode: detectedBarcode || undefined,
     category: detectedCategory,
     confidence,
   };

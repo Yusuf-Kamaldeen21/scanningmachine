@@ -56,6 +56,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   // OCR state
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<{ percent: number; text: string }>({ percent: 0, text: '' });
+  const [latestOcrResult, setLatestOcrResult] = useState<ParsedPackagingResult | null>(null);
   const packagingFileInputRef = useRef<HTMLInputElement>(null);
 
   // Toggle Fast Scan Mode
@@ -70,6 +71,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const handleBarcodeDetected = async (barcode: string) => {
     setCurrentBarcode(barcode);
     setLookupNotification(null);
+    setLatestOcrResult(null);
 
     // 1. Perform lookup against local catalogue, cache, & online API
     const lookupResult = await lookupProductByBarcode(barcode, settings.autoLookupOnline);
@@ -160,6 +162,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   // Manual entry clicked
   const handleManualEntry = () => {
     setCurrentBarcode('');
+    setLatestOcrResult(null);
     setLookupInitialProduct({
       category: settings.rememberLastCategory ? settings.lastCategory : '',
       brand: settings.rememberBrand ? settings.lastBrand : '',
@@ -178,36 +181,50 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   // Trigger OCR analysis from packaging image
   const handleProcessPackagingImage = async (imageFileOrBlob: Blob) => {
+    if (ocrLoading) return;
     setOcrLoading(true);
-    setOcrProgress({ percent: 10, text: 'Preprocessing image...' });
+    setLookupNotification(null);
+    setOcrProgress({ percent: 15, text: 'Reading packaging...' });
 
     try {
       const parsed: ParsedPackagingResult = await recognizePackagingText(
         imageFileOrBlob,
         (percent, text) => {
-          setOcrProgress({ percent, text });
+          setOcrProgress({ percent, text: text || 'Reading packaging...' });
         }
       );
 
       playScanSuccessSound();
 
-      setLookupInitialProduct((prev) => ({
-        ...prev,
-        brand: parsed.brand || prev?.brand || '',
-        productName: parsed.productName || prev?.productName || '',
-        sizeQuantity: parsed.sizeQuantity || prev?.sizeQuantity || '',
-        packQuantity: parsed.packQuantity || prev?.packQuantity,
-        variant: parsed.variant || prev?.variant || '',
-        colour: parsed.colour || prev?.colour || '',
-        category: parsed.category || prev?.category || '',
+      // Barcode: preserve existing verified barcode or take OCR barcode
+      const effectiveBarcode = currentBarcode || parsed.barcode || '';
+      if (!currentBarcode && parsed.barcode) {
+        setCurrentBarcode(parsed.barcode);
+      }
+
+      const mergedProduct: Partial<ProductRecord> = {
+        barcode: effectiveBarcode,
+        brand: parsed.brand || lookupInitialProduct?.brand || '',
+        productName: parsed.productName || lookupInitialProduct?.productName || '',
+        sizeQuantity: parsed.sizeQuantity || lookupInitialProduct?.sizeQuantity || '',
+        packQuantity: parsed.packQuantity || lookupInitialProduct?.packQuantity,
+        variant: parsed.variant || lookupInitialProduct?.variant || '',
+        colour: parsed.colour || lookupInitialProduct?.colour || '',
+        category: parsed.category || lookupInitialProduct?.category || '',
         fieldConfidence: parsed.confidence,
         source: 'ocr',
-      }));
+      };
 
-      setLookupNotification('Extracted product details from packaging image via OCR!');
+      setLookupInitialProduct(mergedProduct);
+      setLatestOcrResult(parsed);
       setViewMode('editing');
+
+      // Requirement 6: Show "Product details extracted — review highlighted fields"
+      // only after successful form population!
+      setLookupNotification('Product details extracted — review highlighted fields');
     } catch (err) {
       console.error('Packaging OCR failed:', err);
+      setLookupNotification(null);
       alert('Could not extract clear text from the packaging image. Please enter details manually.');
     } finally {
       setOcrLoading(false);
@@ -220,6 +237,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     saveAndScanNext: boolean
   ) => {
     await onSaveProduct(product, saveAndScanNext);
+    setLatestOcrResult(null);
 
     if (saveAndScanNext) {
       // Instantly reset and return to scanner for continuous high-speed scanning
@@ -240,6 +258,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         type="file"
         accept="image/*"
         capture="environment"
+        disabled={ocrLoading}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -258,10 +277,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
               <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
             </div>
             <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-              Packaging AI OCR Recognition
+              Reading packaging...
             </h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4">
-              {ocrProgress.text || 'Extracting brand, size, variant & text...'}
+              {ocrProgress.text || 'Reading packaging...'}
             </p>
 
             <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -424,6 +443,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           <ProductForm
             initialBarcode={currentBarcode}
             initialProduct={lookupInitialProduct as ProductRecord | null}
+            ocrResult={latestOcrResult}
+            isProcessingOcr={ocrLoading}
             categories={categories}
             rememberCategory={settings.rememberLastCategory}
             lastCategory={settings.lastCategory}
@@ -431,9 +452,17 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             lastBrand={settings.lastBrand}
             allProducts={recentProducts}
             onSave={handleFormSave}
-            onCancel={() => setViewMode('scanning')}
+            onCancel={() => {
+              setLookupNotification(null);
+              setLatestOcrResult(null);
+              setViewMode('scanning');
+            }}
             onViewExisting={onViewExistingProduct}
-            onSnapPackaging={() => packagingFileInputRef.current?.click()}
+            onSnapPackaging={() => {
+              if (!ocrLoading) {
+                packagingFileInputRef.current?.click();
+              }
+            }}
           />
         </div>
       )}
