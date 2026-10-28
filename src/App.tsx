@@ -49,28 +49,20 @@ export const App: React.FC = () => {
   const settings: AppSettings = settingsRecord || DEFAULT_SETTINGS;
 
   // Dark Mode Management
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const isDarkMode =
+    settings.theme === 'dark' ||
+    (settings.theme === 'system' &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   useEffect(() => {
     const root = document.documentElement;
-    if (settings.theme === 'dark') {
+    if (isDarkMode) {
       root.classList.add('dark');
-      setIsDarkMode(true);
-    } else if (settings.theme === 'light') {
-      root.classList.remove('dark');
-      setIsDarkMode(false);
     } else {
-      // System preference
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (prefersDark) {
-        root.classList.add('dark');
-        setIsDarkMode(true);
-      } else {
-        root.classList.remove('dark');
-        setIsDarkMode(false);
-      }
+      root.classList.remove('dark');
     }
-  }, [settings.theme]);
+  }, [isDarkMode]);
 
   // Toggle Theme
   const handleToggleTheme = async () => {

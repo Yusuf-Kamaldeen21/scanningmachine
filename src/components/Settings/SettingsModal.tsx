@@ -100,6 +100,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           alert('Invalid backup file format. Expected a QuickStock JSON export.');
         }
       } catch (err) {
+        console.error('Failed to parse backup JSON file:', err);
         alert('Failed to parse backup JSON file.');
       } finally {
         if (e.target) e.target.value = '';

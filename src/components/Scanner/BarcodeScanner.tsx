@@ -63,7 +63,16 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
   const [hasTorch, setHasTorch] = useState(false);
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [showTestBarcodes, setShowTestBarcodes] = useState(false);
-  const [isSecureContext, setIsSecureContext] = useState(true);
+  const [isSecureContext] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return (
+        window.isSecureContext ||
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
+      );
+    }
+    return true;
+  });
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -71,17 +80,6 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
   const isHandlingScanRef = useRef(false);
   const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Check secure context
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isSecure =
-        window.isSecureContext ||
-        window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1';
-      setIsSecureContext(isSecure);
-    }
-  }, []);
 
   // Handle detected barcode with immediate lock & zero artificial delay
   const handleDetectedBarcode = useCallback(
@@ -287,8 +285,11 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
 
   // Initialize camera on mount & cleanup on unmount
   useEffect(() => {
-    startScanner();
+    const timer = setTimeout(() => {
+      void startScanner();
+    }, 0);
     return () => {
+      clearTimeout(timer);
       stopScanner();
     };
   }, [startScanner, stopScanner]);

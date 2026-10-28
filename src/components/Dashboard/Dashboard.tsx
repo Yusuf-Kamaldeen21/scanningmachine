@@ -43,7 +43,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onViewAllRecords,
 }) => {
   const [copiedToast, setCopiedToast] = useState<string | null>(null);
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const [todayStr] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Compute metrics
   const totalProducts = products.length;
