@@ -33,7 +33,7 @@ export const DeleteProductModal: React.FC<DeleteProductModalProps> = ({
         <p className="text-xs text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
           Are you sure you want to delete{' '}
           <strong className="text-slate-900 dark:text-slate-100 font-semibold">
-            {product.brand} - {product.productName} ({product.sizeQuantity})
+            {product.productName} ({product.sizeQuantity})
           </strong>{' '}
           from the local database?
         </p>

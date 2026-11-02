@@ -49,7 +49,7 @@ export const ProductList: React.FC<ProductListProps> = ({
   const [barcodeFilter, setBarcodeFilter] = useState<'all' | 'with-barcode' | 'without-barcode'>('all');
   const [completenessFilter, setCompletenessFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
   const [duplicateFilter, setDuplicateFilter] = useState<boolean>(false);
-  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'brand-asc' | 'name-asc'>('date-desc');
+  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'name-asc'>('date-desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
 
@@ -72,7 +72,6 @@ export const ProductList: React.FC<ProductListProps> = ({
 
     for (const p of products) {
       const isComplete =
-        Boolean(p.brand?.trim()) &&
         Boolean(p.productName?.trim()) &&
         Boolean(p.sizeQuantity?.trim()) &&
         Boolean(p.variant?.trim()) &&
@@ -106,7 +105,6 @@ export const ProductList: React.FC<ProductListProps> = ({
         if (searchTerm.trim()) {
           const term = searchTerm.toLowerCase();
           const matches =
-            p.brand.toLowerCase().includes(term) ||
             p.productName.toLowerCase().includes(term) ||
             (p.variant || '').toLowerCase().includes(term) ||
             (p.colour || '').toLowerCase().includes(term) ||
@@ -131,7 +129,6 @@ export const ProductList: React.FC<ProductListProps> = ({
         // Completeness filter
         if (completenessFilter === 'complete') {
           const isComplete =
-            Boolean(p.brand?.trim()) &&
             Boolean(p.productName?.trim()) &&
             Boolean(p.sizeQuantity?.trim()) &&
             Boolean(p.variant?.trim()) &&
@@ -140,7 +137,6 @@ export const ProductList: React.FC<ProductListProps> = ({
         }
         if (completenessFilter === 'incomplete') {
           const isComplete =
-            Boolean(p.brand?.trim()) &&
             Boolean(p.productName?.trim()) &&
             Boolean(p.sizeQuantity?.trim()) &&
             Boolean(p.variant?.trim()) &&
@@ -163,9 +159,6 @@ export const ProductList: React.FC<ProductListProps> = ({
         }
         if (sortBy === 'date-asc') {
           return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        }
-        if (sortBy === 'brand-asc') {
-          return a.brand.localeCompare(b.brand);
         }
         if (sortBy === 'name-asc') {
           return a.productName.localeCompare(b.productName);
@@ -443,7 +436,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              placeholder="Search by brand, name, variant, colour, barcode..."
+              placeholder="Search by product name, variant, colour, barcode..."
               className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
             />
           </div>
@@ -519,12 +512,11 @@ export const ProductList: React.FC<ProductListProps> = ({
             <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'date-desc' | 'date-asc' | 'brand-asc' | 'name-asc')}
+              onChange={(e) => setSortBy(e.target.value as 'date-desc' | 'date-asc' | 'name-asc')}
               className="w-full py-1.5 px-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
             >
               <option value="date-desc">Newest First</option>
               <option value="date-asc">Oldest First</option>
-              <option value="brand-asc">Brand (A - Z)</option>
               <option value="name-asc">Product Name (A - Z)</option>
             </select>
           </div>
@@ -616,7 +608,6 @@ export const ProductList: React.FC<ProductListProps> = ({
                 <tr>
                   <th className="py-3 px-3 w-10 text-center">No.</th>
                   <th className="py-3 px-2 w-8"></th>
-                  <th className="py-3 px-3">Brand</th>
                   <th className="py-3 px-3">Product Name</th>
                   <th className="py-3 px-3">Size/Qty</th>
                   <th className="py-3 px-3">Variant</th>
@@ -656,9 +647,6 @@ export const ProductList: React.FC<ProductListProps> = ({
                         </button>
                       </td>
                       <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
-                        {p.brand}
-                      </td>
-                      <td className="py-3 px-3 font-medium text-slate-800 dark:text-slate-200">
                         {p.productName}
                       </td>
                       <td className="py-3 px-3">
@@ -758,9 +746,6 @@ export const ProductList: React.FC<ProductListProps> = ({
                           #{rowNumber}
                         </span>
                         <span className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
-                          {p.brand}
-                        </span>
-                        <span className="font-semibold text-sm text-slate-700 dark:text-slate-200 truncate">
                           {p.productName}
                         </span>
                       </div>

@@ -30,7 +30,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   // Selected Fields
   const [fields, setFields] = useState<ExportOptions['fields']>({
-    brand: true,
     productName: true,
     sizeQuantity: true,
     variant: true,
@@ -213,9 +212,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 {[
-                  { key: 'brand', label: 'Brand (Required)' },
                   { key: 'productName', label: 'Product Name (Required)' },
-                  { key: 'sizeQuantity', label: 'Size / Quantity' },
+                  { key: 'sizeQuantity', label: 'Size / Quantity (Required)' },
                   { key: 'variant', label: 'Variant' },
                   { key: 'colour', label: 'Colour' },
                   { key: 'barcode', label: 'Barcode' },

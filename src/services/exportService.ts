@@ -42,7 +42,7 @@ function sanitizeSpreadsheetField(value: string | undefined | null, fallback = '
 
 /**
  * Generates clean Tab-Separated Values (TSV) with column order:
- * Brand \t Product Name \t Size/Quantity \t Variant \t Colour \t Barcode \t Category \t Date
+ * Product Name \t Size/Quantity \t Variant \t Colour \t Barcode \t Category \t Date Captured
  *
  * One product per row, suitable for direct pasting into Excel, Google Sheets, or a notebook.
  */
@@ -52,7 +52,7 @@ export function generateTSV(
 ): string {
   if (options.namesOnly) {
     const lines = products.map((p) =>
-      sanitizeSpreadsheetField(`${p.brand} ${p.productName} (${p.sizeQuantity})`.trim())
+      sanitizeSpreadsheetField(`${p.productName} (${p.sizeQuantity})`.trim())
     );
     if (options.includeHeader) {
       return ['Product Name', ...lines].join('\n');
@@ -63,11 +63,10 @@ export function generateTSV(
   const rows: string[] = [];
 
   if (options.includeHeader !== false) {
-    rows.push(['Brand', 'Product Name', 'Size/Quantity', 'Variant', 'Colour', 'Barcode', 'Category', 'Date'].join('\t'));
+    rows.push(['Product Name', 'Size/Quantity', 'Variant', 'Colour', 'Barcode', 'Category', 'Date Captured'].join('\t'));
   }
 
   for (const p of products) {
-    const brand = sanitizeSpreadsheetField(p.brand, 'Unknown Brand');
     const name = sanitizeSpreadsheetField(p.productName, 'Unknown Product');
     const size = sanitizeSpreadsheetField(p.sizeQuantity, 'N/A');
     const variant = sanitizeSpreadsheetField(p.variant, 'N/A');
@@ -76,7 +75,7 @@ export function generateTSV(
     const category = sanitizeSpreadsheetField(p.category, 'General');
     const date = sanitizeSpreadsheetField(p.dateCaptured, new Date().toISOString().slice(0, 10));
 
-    rows.push([brand, name, size, variant, colour, barcode, category, date].join('\t'));
+    rows.push([name, size, variant, colour, barcode, category, date].join('\t'));
   }
 
   return rows.join('\n');
@@ -128,7 +127,6 @@ function buildExportRows(products: ProductRecord[], options: ExportOptions) {
   return products.map((item) => {
     const row: Record<string, string> = {};
 
-    if (options.fields.brand) row['Brand'] = item.brand;
     if (options.fields.productName) row['Product Name'] = item.productName;
     if (options.fields.sizeQuantity) row['Size / Quantity'] = item.sizeQuantity;
     if (options.fields.variant) row['Variant'] = item.variant || '';

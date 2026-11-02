@@ -267,23 +267,21 @@ export function splitSizeAndPackQuantity(input: string): QuantitySplitResult {
 }
 
 /**
- * Finds all related products with the same Brand and Product Name in the collection.
+ * Finds all related products with the same Product Name in the collection.
  * Products with different sizes or flavours are distinct SKUs, but related.
  */
 export function findRelatedVariants(
-  target: { brand: string; productName: string; id?: string },
+  target: { productName: string; brand?: string; id?: string },
   allProducts: ProductRecord[]
 ): ProductRecord[] {
-  const targetBrand = target.brand.trim().toLowerCase();
   const targetName = target.productName.trim().toLowerCase();
 
-  if (!targetBrand || !targetName) return [];
+  if (!targetName) return [];
 
   return allProducts.filter((p) => {
     if (target.id && p.id === target.id) return false;
-    const pBrand = p.brand.trim().toLowerCase();
     const pName = p.productName.trim().toLowerCase();
-    return pBrand === targetBrand && pName === targetName;
+    return pName === targetName;
   });
 }
 

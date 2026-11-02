@@ -111,13 +111,10 @@ export const App: React.FC = () => {
 
     await db.products.add(newRecord);
 
-    // Update settings with last category/brand if remember settings are enabled
+    // Update settings with last category if remember settings are enabled
     const updates: Partial<AppSettings> = {};
     if (settings.rememberLastCategory && productData.category) {
       updates.lastCategory = productData.category;
-    }
-    if (settings.rememberBrand && productData.brand) {
-      updates.lastBrand = productData.brand;
     }
     if (Object.keys(updates).length > 0) {
       await db.settings.update(settings.id, updates);

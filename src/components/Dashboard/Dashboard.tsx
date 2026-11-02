@@ -51,7 +51,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Products awaiting review (missing size, variant, or category)
   const awaitingCompletion = products.filter(
-    (p) => !p.brand || !p.productName || !p.sizeQuantity || !p.category || !p.variant
+    (p) => !p.productName || !p.sizeQuantity || !p.category || !p.variant
   ).length;
 
   // Products without barcodes
@@ -305,7 +305,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div className="flex-1 min-w-0 pr-4">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">
-                      {p.brand} {p.productName}
+                      {p.productName}
                     </span>
                     <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-600 dark:text-slate-300">
                       {p.sizeQuantity}

@@ -14,7 +14,8 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
     'tea', 'coffee', 'milo', 'bournvita', 'ovaltine', 'lipton', 'nescafe', 'juice', 'soda',
     'cola', 'pepsi', 'fanta', 'sprite', 'mirinda', 'seven up', 'maltina', 'amstel', 'malta guinness',
     'energy drink', 'red bull', 'fearless', 'climax', 'water', 'eva', 'nestle pure life',
-    'cordial', 'ribena', 'lucozade', 'chivita', 'chi exotic', 'bobzi', 'smoothie', 'wine', 'beer'
+    'cordial', 'ribena', 'lucozade', 'chivita', 'chi exotic', 'bobzi', 'smoothie', 'wine', 'beer',
+    'soft drink', 'drink'
   ],
   'Food & Groceries': [
     'rice', 'noodles', 'instant noodles', 'indomie', 'golden penny', 'chikki', 'spaghetti', 'pasta',
@@ -43,12 +44,14 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   'Personal Care': [
     'deodorant', 'roll-on', 'body spray', 'perfume', 'bodyspray', 'axe', 'rexona', 'sure',
     'nivea men', 'shower gel', 'body wash', 'sanitary pad', 'always', 'molped', 'kotex',
-    'tampon', 'panty liner', 'razor', 'shaving cream', 'gillette', 'cotton buds', 'cotton wool'
+    'tampon', 'panty liner', 'razor', 'shaving cream', 'gillette', 'cotton buds', 'cotton wool',
+    'antiseptic', 'antiseptic liquid'
   ],
   'Toiletries': [
     'toilet paper', 'tissue', 'wipes', 'wet wipes', 'serviette', 'kitchen towel',
     'soap', 'bar soap', 'liquid soap', 'dettol', 'premier', 'lux', 'imperial leather',
-    'sanitary', 'toothpaste', 'close up', 'colgate', 'oral-b', 'maclaens', 'sensodyne', 'toothbrush'
+    'sanitary', 'toothpaste', 'close up', 'colgate', 'oral-b', 'maclaens', 'sensodyne', 'toothbrush',
+    'antiseptic', 'antiseptic liquid'
   ],
   'Household Cleaning': [
     'detergent', 'washing powder', 'ariel', 'omo', 'sunlight', 'so klin', 'klin', 'bleach',
@@ -80,10 +83,10 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
  */
 export function suggestCategory(
   productName: string,
-  brand: string,
+  brand?: string,
   variant?: string
 ): CategorySuggestion | null {
-  const combinedText = `${brand} ${productName} ${variant || ''}`.toLowerCase().trim();
+  const combinedText = `${brand || ''} ${productName} ${variant || ''}`.toLowerCase().trim();
   if (!combinedText) return null;
 
   let bestCategory = '';

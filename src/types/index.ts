@@ -1,7 +1,7 @@
 export type FieldConfidence = 'verified' | 'suggested' | 'needs-review' | 'manual';
 
 export interface FieldConfidenceMap {
-  brand?: FieldConfidence;
+  brand?: FieldConfidence; // Optional for backward compatibility with older records
   productName?: FieldConfidence;
   sizeQuantity?: FieldConfidence;
   variant?: FieldConfidence;
@@ -12,7 +12,7 @@ export interface FieldConfidenceMap {
 
 export interface ProductRecord {
   id: string; // Unique internal record ID (UUID)
-  brand: string; // Required (e.g. Peak, Indomie)
+  brand?: string; // Optional for backward compatibility with existing stored records
   productName: string; // Required (e.g. Evaporated Milk)
   sizeQuantity: string; // Required (e.g. 170g, 500ml, 1kg)
   variant: string; // Optional (e.g. Chocolate, Chicken)
@@ -43,8 +43,8 @@ export interface AppSettings {
   scanMode: 'fast' | 'review'; // Fast Scan Mode auto-saves verified barcodes; Review Mode shows form
   rememberLastCategory: boolean;
   lastCategory: string;
-  rememberBrand: boolean;
-  lastBrand: string;
+  rememberBrand?: boolean;
+  lastBrand?: string;
   soundFeedback: boolean;
   vibrateFeedback: boolean;
   autoLookupOnline: boolean;
@@ -55,7 +55,7 @@ export interface AppSettings {
 export interface ExportOptions {
   format: 'xlsx' | 'csv' | 'json' | 'tsv';
   fields: {
-    brand: boolean;
+    brand?: boolean;
     productName: boolean;
     sizeQuantity: boolean;
     variant: boolean;

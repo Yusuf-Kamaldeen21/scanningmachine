@@ -3,7 +3,7 @@ import type { FieldConfidenceMap } from '../types';
 
 export interface ProductLookupResult {
   source: 'local-db' | 'local-catalogue' | 'open-food-facts' | 'none';
-  brand: string;
+  brand?: string;
   productName: string;
   sizeQuantity: string;
   variant?: string;
@@ -339,16 +339,15 @@ export async function lookupProductByBarcode(
           const productName = product.product_name || product.generic_name || '';
           const sizeQuantity = product.quantity || '';
 
-          if (brand || productName) {
+          if (productName) {
             const apiResult: ProductLookupResult = {
               source: 'open-food-facts',
               barcode: cleanBarcode,
-              brand: brand || 'Generic',
-              productName: productName || 'Unknown Product',
+              brand: brand || undefined,
+              productName: productName,
               sizeQuantity: sizeQuantity || '',
               confidence: {
-                brand: brand ? 'verified' : 'needs-review',
-                productName: productName ? 'suggested' : 'needs-review',
+                productName: 'suggested',
                 sizeQuantity: sizeQuantity ? 'verified' : 'needs-review',
                 variant: 'needs-review',
                 colour: 'needs-review',

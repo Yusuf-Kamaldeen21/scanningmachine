@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { BarcodeScanner } from './BarcodeScanner';
 import { ProductForm } from '../ProductForm/ProductForm';
-import type { ProductRecord, ProductCategory, AppSettings } from '../../types';
+import type { ProductRecord, ProductCategory, AppSettings, FieldConfidenceMap } from '../../types';
 import { lookupProductByBarcode } from '../../services/productLookup';
 import { recognizePackagingText, type ParsedPackagingResult } from '../../services/ocrService';
 import { playScanSuccessSound, playSaveSuccessSound } from '../../utils/feedback';
@@ -79,19 +79,17 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     if (lookupResult) {
       const candidate: Partial<ProductRecord> = {
         barcode,
-        brand: lookupResult.brand,
         productName: lookupResult.productName,
         sizeQuantity: lookupResult.sizeQuantity,
         variant: lookupResult.variant || '',
         colour: lookupResult.colour || 'N/A',
         category: lookupResult.category || (settings.rememberLastCategory ? settings.lastCategory : ''),
         fieldConfidence: lookupResult.confidence,
-        source: lookupResult.source === 'open-food-facts' ? 'barcode-lookup' : 'barcode-lookup',
+        source: 'barcode-lookup',
       };
 
       // FAST SCAN MODE: If data is sufficiently complete and verified, auto-save!
       const isCompleteAndVerified =
-        lookupResult.brand &&
         lookupResult.productName &&
         lookupResult.sizeQuantity &&
         lookupResult.category &&
@@ -100,7 +98,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       if (scanMode === 'fast' && isCompleteAndVerified) {
         const productToSave: Omit<ProductRecord, 'id' | 'createdAt' | 'updatedAt'> = {
           barcode,
-          brand: lookupResult.brand,
           productName: lookupResult.productName,
           sizeQuantity: lookupResult.sizeQuantity,
           variant: lookupResult.variant || 'Original',
@@ -116,7 +113,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         playSaveSuccessSound();
 
         setLastAutoSaved({
-          name: `${lookupResult.brand} ${lookupResult.productName} (${lookupResult.sizeQuantity})`,
+          name: `${lookupResult.productName} (${lookupResult.sizeQuantity})`,
         });
 
         // Hide toast after 4s
@@ -142,10 +139,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       setLookupInitialProduct({
         barcode,
         category: settings.rememberLastCategory ? settings.lastCategory : '',
-        brand: settings.rememberBrand ? settings.lastBrand : '',
         fieldConfidence: {
           barcode: 'verified',
-          brand: 'needs-review',
           productName: 'needs-review',
           sizeQuantity: 'needs-review',
           variant: 'needs-review',
@@ -165,9 +160,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     setLatestOcrResult(null);
     setLookupInitialProduct({
       category: settings.rememberLastCategory ? settings.lastCategory : '',
-      brand: settings.rememberBrand ? settings.lastBrand : '',
       fieldConfidence: {
-        brand: 'needs-review',
         productName: 'needs-review',
         sizeQuantity: 'needs-review',
         variant: 'needs-review',
@@ -191,7 +184,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         imageFileOrBlob,
         (percent, text) => {
           setOcrProgress({ percent, text: text || 'Reading packaging...' });
-        }
+        },
+        { scannedBarcode: currentBarcode, existingProducts: recentProducts }
       );
 
       playScanSuccessSound();
@@ -202,26 +196,61 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         setCurrentBarcode(parsed.barcode);
       }
 
+      // Do not overwrite verified existing values with empty or low-confidence OCR results
+      const existingProductName = lookupInitialProduct?.productName || '';
+      const existingNameVerified = lookupInitialProduct?.fieldConfidence?.productName === 'verified';
+
+      const finalProductName = existingNameVerified
+        ? existingProductName
+        : (parsed.productName || existingProductName);
+
+      const finalSize = (lookupInitialProduct?.fieldConfidence?.sizeQuantity === 'verified' && lookupInitialProduct?.sizeQuantity)
+        ? lookupInitialProduct.sizeQuantity
+        : (parsed.sizeQuantity || lookupInitialProduct?.sizeQuantity || '');
+
+      const finalVariant = parsed.variant || lookupInitialProduct?.variant || '';
+      const finalColour = parsed.colour || lookupInitialProduct?.colour || '';
+      const finalCategory = parsed.category || lookupInitialProduct?.category || '';
+
+      const mergedConfidence: FieldConfidenceMap = {
+        ...lookupInitialProduct?.fieldConfidence,
+        ...parsed.confidence,
+        barcode: effectiveBarcode ? 'verified' : 'needs-review',
+      };
+      if (existingNameVerified) {
+        mergedConfidence.productName = 'verified';
+      }
+
       const mergedProduct: Partial<ProductRecord> = {
         barcode: effectiveBarcode,
-        brand: parsed.brand || lookupInitialProduct?.brand || '',
-        productName: parsed.productName || lookupInitialProduct?.productName || '',
-        sizeQuantity: parsed.sizeQuantity || lookupInitialProduct?.sizeQuantity || '',
+        productName: finalProductName,
+        sizeQuantity: finalSize,
         packQuantity: parsed.packQuantity || lookupInitialProduct?.packQuantity,
-        variant: parsed.variant || lookupInitialProduct?.variant || '',
-        colour: parsed.colour || lookupInitialProduct?.colour || '',
-        category: parsed.category || lookupInitialProduct?.category || '',
-        fieldConfidence: parsed.confidence,
-        source: 'ocr',
+        variant: finalVariant,
+        colour: finalColour,
+        category: finalCategory,
+        fieldConfidence: mergedConfidence,
+        source: existingNameVerified ? 'barcode-lookup' : 'ocr',
       };
 
       setLookupInitialProduct(mergedProduct);
-      setLatestOcrResult(parsed);
+      setLatestOcrResult({
+        ...parsed,
+        productName: finalProductName,
+        sizeQuantity: finalSize,
+      });
       setViewMode('editing');
 
-      // Requirement 6: Show "Product details extracted — review highlighted fields"
-      // only after successful form population!
-      setLookupNotification('Product details extracted — review highlighted fields');
+      // Distinguish status accurately:
+      if (existingNameVerified) {
+        setLookupNotification('Packaging text processed — verified barcode lookup preserved');
+      } else if (finalProductName && (parsed.confidence.productName === 'verified' || parsed.confidence.productName === 'suggested')) {
+        setLookupNotification(`Product details extracted: "${finalProductName}" — review highlighted fields`);
+      } else if (finalProductName) {
+        setLookupNotification('Product details extracted — please review and verify Product Name');
+      } else {
+        setLookupNotification('Text extracted from packaging — please enter Product Name manually');
+      }
     } catch (err) {
       console.error('Packaging OCR failed:', err);
       setLookupNotification(null);
@@ -377,7 +406,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 </span>
               ) : (
                 <span>
-                  <strong>Review Mode Active:</strong> You can review and adjust Brand, Size, Variant, and Category before saving every item.
+                  <strong>Review Mode Active:</strong> You can review and adjust Product Name, Size, Variant, and Category before saving every item.
                 </span>
               )}
             </div>
@@ -405,7 +434,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   >
                     <div className="truncate pr-2">
                       <span className="font-bold text-slate-900 dark:text-slate-100">
-                        {p.brand} {p.productName}
+                        {p.productName}
                       </span>{' '}
                       <span className="text-slate-500 dark:text-slate-400">
                         ({p.sizeQuantity})
@@ -448,8 +477,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             categories={categories}
             rememberCategory={settings.rememberLastCategory}
             lastCategory={settings.lastCategory}
-            rememberBrand={settings.rememberBrand}
-            lastBrand={settings.lastBrand}
             allProducts={recentProducts}
             onSave={handleFormSave}
             onCancel={() => {

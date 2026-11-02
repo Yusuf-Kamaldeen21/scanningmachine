@@ -300,23 +300,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4"
                 />
               </label>
-
-              <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 cursor-pointer">
-                <div>
-                  <div className="font-semibold text-slate-800 dark:text-slate-200 text-xs">
-                    Remember Brand for Same-Brand Batches
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    Keeps the brand filled when capturing multiple flavours of same brand
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.rememberBrand}
-                  onChange={(e) => onUpdateSettings({ rememberBrand: e.target.checked })}
-                  className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4"
-                />
-              </label>
             </div>
           </div>
 
