@@ -559,8 +559,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
                 className="flex items-center justify-between px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-left rounded-lg text-xs transition border border-slate-700/60"
               >
                 <div className="truncate pr-2">
-                  <span className="font-semibold text-slate-200">{p.brand}</span>{' '}
-                  <span className="text-slate-400">{p.productName} ({p.sizeQuantity})</span>
+                  <span className="font-semibold text-slate-200">{p.productName}</span>{' '}
+                  <span className="text-slate-400">({p.sizeQuantity})</span>
                 </div>
                 <span className="font-mono text-[10px] text-sky-400 bg-sky-950/60 px-1.5 py-0.5 rounded border border-sky-800 shrink-0">
                   {code.slice(-6)}

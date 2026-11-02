@@ -61,7 +61,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleGenerateSampleData = async () => {
     const demoItems: ProductRecord[] = Object.values(SUPERMARKET_CATALOGUE).map((item, idx) => ({
       id: `demo-${idx + 1}-${Date.now()}`,
-      brand: item.brand,
       productName: item.productName,
       sizeQuantity: item.sizeQuantity,
       variant: item.variant || '',

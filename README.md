@@ -23,15 +23,15 @@
 - **Manual Graceful Fallback:** If a barcode is not recognized, staff can enter details immediately.
 
 ### 3. Smart Product Entry & Consistency
-- **Captured Fields:** Brand (Required), Product Name (Required), Size/Quantity (Required), Variant (Optional), Barcode (string, preserves leading zeros), Category (Optional), Date Captured (Auto-filled, editable), Notes (Optional), Unique Record ID.
+- **Captured Fields:** Product Name (Required), Size/Quantity (Required), Variant (Optional), Colour (Optional), Barcode (string, preserves leading zeros), Category (Optional), Date Captured (Auto-filled, editable), Notes (Optional), Unique Record ID.
 - **Auto-Focus:** Automatically focuses the first missing required field when opening the form.
-- **Smart Category Suggester:** Real-time semantic keyword matching that suggests the standard category based on product name and brand (e.g. Milk & Peak &rarr; `Dairy Products`, Noodles & Spaghetti &rarr; `Food & Groceries`, Bleach & Hypo &rarr; `Household Cleaning`).
+- **Smart Category Suggester:** Real-time semantic keyword matching that suggests the standard category based on product name and variant (e.g. Milk &rarr; `Dairy Products`, Noodles & Spaghetti &rarr; `Food & Groceries`, Bleach & Disinfectant &rarr; `Household Cleaning`).
 - **High-Volume Action:** **Save & Scan Next** button saves the record with audio feedback and instantly reactivates the scanner without page reload.
-- **Safe Autofill:** Optional toggles in Settings to remember the last category and remember brand for same-brand batches.
+- **Safe Autofill:** Optional toggle in Settings to remember the last category.
 
 ### 4. Duplicate Detection & Safeguards
 - **Exact Barcode Checking:** Flags if a scanned or typed barcode already exists in the local database.
-- **Fuzzy Match Fallback:** If capturing an item without a barcode, checks brand + product name + size + variant to alert about existing stock.
+- **Fuzzy Match Fallback:** If capturing an item without a barcode, checks product name + size + variant to alert about existing stock.
 - **Actionable Alert:** Staff can view the existing record, edit it, cancel, or choose to override and save anyway.
 
 ### 5. Standardized Category Management
@@ -43,8 +43,8 @@
 
 ### 6. Export for Moniebook & Spreadsheets
 - **Excel (.xlsx):** Built with SheetJS (`xlsx`), cell type explicitly marked as `'s'` (string) to prevent Excel from stripping leading zeros (e.g. `0123456789012`).
-- **CSV:** Formatted with UTF-8 BOM and optional Excel text formula `="0123456789012"`.
-- **Customizable Columns:** Toggle Brand, Product Name, Size/Quantity, Variant, Barcode, Category, Date Captured, Notes, Record ID.
+- **CSV & TSV Clipboard:** Standardized 7-column export order: `Product Name | Size/Quantity | Variant | Colour | Barcode | Category | Date Captured`.
+- **Customizable Columns:** Toggle Product Name, Size/Quantity, Variant, Colour, Barcode, Category, Date Captured, Notes, Record ID.
 - **Flexible Filters:** Filter by category, specific capture date, or only incomplete records.
 - **Full JSON Backup & Restore:** Export complete database dumps and restore across devices.
 
@@ -137,18 +137,18 @@ If testing from a phone on the same Wi-Fi network:
 
 ## 🧪 Verification & Test Scenarios
 
-Run the automated test suite verifying category suggestions, product lookups, and export filtering:
+Run the automated test suite verifying category suggestions, product lookups, packaging OCR extraction, and export filtering:
 ```bash
-npx.cmd tsx tests/verify-core.ts
+npm test
 ```
 
 ### Manual Acceptance Test Scenarios
 1. **Scan valid barcode with camera:** Tap the bottom scanner button &rarr; point at an FMCG product &rarr; camera detects code, beeps, vibrates, and opens the pre-filled form.
 2. **Manual barcode entry:** Tap "Manual Barcode" on the scanner screen &rarr; enter barcode string &rarr; click Save.
-3. **Save product with required fields:** Enter Brand, Product Name, and Size &rarr; Save.
+3. **Save product with required fields:** Enter Product Name and Size &rarr; Save.
 4. **Validation check:** Leave Product Name blank &rarr; attempt to save &rarr; error warning tone sounds and input is highlighted.
-5. **Duplicate barcode detection:** Scan or enter barcode `6151100001017` twice &rarr; warning banner displays existing Peak milk record with options to view, edit, or override.
-6. **Capture product without barcode:** Tap "Manual Entry" &rarr; leave barcode blank &rarr; enter Brand and Name &rarr; saves successfully as unbarcoded item.
+5. **Duplicate barcode detection:** Scan or enter barcode `6151100001017` twice &rarr; warning banner displays existing record with options to view, edit, or override.
+6. **Capture product without barcode:** Tap "Manual Entry" &rarr; leave barcode blank &rarr; enter Product Name and Size &rarr; saves successfully as unbarcoded item.
 7. **Persistence test:** Refresh browser or restart computer &rarr; all products remain intact in IndexedDB.
 8. **Export verification:** Open Export modal &rarr; select Excel (.xlsx) &rarr; verify generated file preserves leading zeros (e.g. `0123456789012`).
 9. **Responsive test:** Shrink window to 375px mobile view &rarr; bottom navigation and touch-friendly buttons adapt seamlessly.
